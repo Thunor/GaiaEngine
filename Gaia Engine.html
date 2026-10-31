@@ -98,6 +98,11 @@ html,body{height:100%;margin:0;background:var(--space);color:var(--ink);font-fam
 #record{width:100%;height:64px;display:block}
 .legend{display:flex;gap:12px;font-size:11px;color:var(--mute)}
 .legend i{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:5px}
+.flora{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;font-size:11px;color:var(--mute);margin-top:10px}
+.flora div{display:flex;align-items:center;gap:6px;min-width:0}
+.flora i{flex:none;width:9px;height:9px;border-radius:2px}
+.flora span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flora code{font-family:var(--mono);font-size:10px;color:var(--ink)}
 .census{display:flex;flex-direction:column;gap:3px}
 .row{display:grid;grid-template-columns:10px 92px 1fr 34px;align-items:center;gap:7px;font-size:12px}
 .row .sw{width:10px;height:10px;border-radius:3px}
@@ -183,6 +188,7 @@ summary{cursor:pointer;font-family:var(--display);font-weight:600;font-size:11px
     <section>
       <h3>World map <small id="layerName">Terrain</small></h3>
       <canvas id="minimap" width="256" height="128" title="Click to look at this spot"></canvas>
+      <div class="flora" id="flora" hidden></div>
     </section>
     <section class="gaia">
       <canvas id="gaiaFace" width="92" height="92"></canvas>
@@ -801,11 +807,11 @@ for (const t of TOOLS) {
   b.addEventListener('pointerleave', hide); b.addEventListener('blur', hide);
 }
 toolsEl.addEventListener('scroll', () => toolLbl.classList.remove('on'));
-const LAYERS = ['Terrain', 'Temperature', 'Rainfall', 'Life', 'Civilization', 'Plates'];
+const LAYERS = ['Terrain', 'Temperature', 'Rainfall', 'Life', 'Civilization', 'Plates', 'Plants'], LSHORT = ['TERR', 'TEMP', 'RAIN', 'LIFE', 'CIVI', 'PLAT', 'FLORA'];
 let mode = 0;
 { const h = document.createElement('h6'); h.textContent = 'Layer'; toolsEl.append(h);
   const wrap = document.createElement('div'); wrap.className = 'layers';
-  LAYERS.forEach((L, k) => { const b = document.createElement('button'); b.className = 'layer'; b.id = 'layer-' + k; b.textContent = L.slice(0, 4).toUpperCase(); b.title = L; b.setAttribute('aria-pressed', k === 0);
+  LAYERS.forEach((L, k) => { const b = document.createElement('button'); b.className = 'layer'; b.id = 'layer-' + k; b.textContent = LSHORT[k]; b.title = L; b.setAttribute('aria-pressed', k === 0);
     b.onclick = () => { mode = k; planetMat.uniforms.uMode.value = k; document.querySelectorAll('.layer').forEach((x, j) => x.setAttribute('aria-pressed', j === k)); document.getElementById('layerName').textContent = L; drawMinimap(); dirty = true; };
     wrap.append(b); });
   toolsEl.append(wrap); }
@@ -1436,15 +1442,30 @@ function pixRGB(i, shade) {
   else if (mode === 2) { if (isSea) { r = 10; g = 26; b = 56; } else { const q = rain[i]; r = 148 - 117 * q; g = 102 + 13 * q; b = 46 + 184 * q; } }
   else if (mode === 3) { const c = life[i]; if (c) { const k = .5 + .5 * bio[i], cc = CLRGB[c]; r = cc[0] * k + r * .3 * (1 - k); g = cc[1] * k + g * .3 * (1 - k); b = cc[2] * k + b * .3 * (1 - k); } else { r *= .3; g *= .3; b *= .3; } }
   else if (mode === 4) { if (civ[i] > .01) { const q = clamp(civ[i]); r = 217 + 38 * q; g = 128 + 114 * q; b = 38 + 140 * q; } else { r *= .3; g *= .3; b *= .3; } }
+  else if (mode === 6) { // plants: which kind grows here, brighter where cover is denser
+    if (isSea) { r = 8; g = 16; b = 30; }
+    else if (veg[i] < .03) { r *= .28; g *= .28; b *= .28; }
+    else { const c = FLORA[biomeOf(T / 27, gM[i])], k = .35 + .65 * clamp(veg[i] * 1.25); r = c[0] * k; g = c[1] * k; b = c[2] * k; } }
   else if (mode === 5) { const pc = plateRGB(plate[i]), q = bprox(i), bc = [[90, 230, 255], [255, 214, 82], [255, 92, 66]][btype[i]];
     r = r * .35 + pc[0] * .45; g = g * .35 + pc[1] * .45; b = b * .35 + pc[2] * .45; r += (bc[0] - r) * q; g += (bc[1] - g) * q; b += (bc[2] - b) * q; }
   else if (civ[i] > .05 && !isSea) { r += 40 * civ[i]; g += 30 * civ[i]; }
   return [r, g, b];
 }
+// a distinct colour for each of Whittaker's biomes, for the Plants layer (the terrain view keeps Estrelas's natural ones)
+const FLORA = [[150, 186, 190], [190, 170, 215], [38, 120, 112], [214, 182, 118], [196, 214, 74], [70, 170, 70], [24, 128, 150],
+  [240, 148, 70], [236, 196, 60], [140, 210, 40], [16, 150, 80]];
+const floraEl = document.getElementById('flora');
+floraEl.innerHTML = BIOMES.map((b, k) => `<div title="${b[0]}"><i style="background:rgb(${FLORA[k]})"></i><span>${b[0]}</span><code id="fl${k}">—</code></div>`).join('');
 function drawMinimap() {
   const D = mmImg.data;
   for (let i = 0; i < N; i++) { const c = pixRGB(i, true), o = i * 4; D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2]; D[o + 3] = 255; }
   mmx.putImageData(mmImg, 0, 0);
+  floraEl.hidden = mode !== 6;
+  if (mode === 6) { // each kind's share of the land, by plant cover
+    const a = new Array(BIOMES.length).fill(0); let land = 0;
+    for (let i = 0; i < N; i++) { if (wat[i]) continue; const w = COSL[(i / W) | 0]; land += w; if (veg[i] >= .03) a[biomeOf(temp[i] / 27, gM[i])] += w * veg[i]; }
+    a.forEach((v, k) => { const pc = land ? v / land * 100 : 0; document.getElementById('fl' + k).textContent = pc >= .05 ? pc.toFixed(1) + '%' : '—';
+      floraEl.children[k].style.opacity = pc >= .05 ? 1 : .45; }); }
   if (mode === 5 && G.regime === 'mobile') { // plate motion: east and north parts of each arrow's velocity
     mmx.lineWidth = 1.3; mmx.lineCap = 'round';
     for (let k = 0; k < ARROW_PTS.length; k += 2) { const p = ARROW_PTS[k], c = cellOf(p); if (bdist[c] < .035) continue;
